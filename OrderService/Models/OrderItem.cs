@@ -1,4 +1,6 @@
-﻿namespace OrderService.Models
+﻿using OrderService.DTO;
+
+namespace OrderService.Models
 {
     public class OrderItem
     {
@@ -6,5 +8,7 @@
         public Guid productId { get; set; }
         public int quantity { get; set; }
         public decimal priceAtPurchase { get; set; }
+
+        public PurchaseResponseDto? PurchaseResponse { get; set; }
     }
 }

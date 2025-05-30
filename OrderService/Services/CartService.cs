@@ -1,27 +1,30 @@
 ﻿using OrderService.DTO;
+using OrderService.Interfaces;
 using OrderService.Models;
-using OrderService.Persistance.Repository;
-using System.Reflection.Metadata.Ecma335;
+using System.ComponentModel;
+using System.Diagnostics;
 
 namespace OrderService.Services
 {
     public class CartService : ICartService
     {
         private readonly ICartRepository _cartRepository;
-        private readonly HttpClient _httpClient;
-        private readonly string _productServiceBaseUrl = "http://localhost:8080/api/Product";
 
-        public CartService(ICartRepository cartRepository, HttpClient httpClient)
+        private readonly IProductService _productService;
+        private readonly IOrderService _orderService;
+
+        public CartService(ICartRepository cartRepository, IProductService productService, IOrderService orderService)
         {
             _cartRepository = cartRepository;
-            _httpClient = httpClient;
+            _productService = productService;
+            _orderService = orderService;
         }
 
         public async Task<ServiceResult> AddItemToCartAsync(Guid cartId, Guid productId, int quantity)
         {
             try
             {
-                var cart = await _cartRepository.GetCartAsync(cartId);
+                var cart = await _cartRepository.GetCartByIdAsync(cartId);
                 if (cart == null)
                 {
                     return new ServiceResult
@@ -30,19 +33,14 @@ namespace OrderService.Services
                         Message = "Cart not found."
                     };
                 }
-                
-                var response = await _httpClient.GetAsync($"{_productServiceBaseUrl}/{productId}/availability");
-                if (response == null || !response.IsSuccessStatusCode)
+
+                var availabilityResult = await _productService.CheckProductAvailabilityAsync(productId);
+                if (!availabilityResult.Success)
                 {
-                    return new ServiceResult
-                    {
-                        Success = false,
-                        Message = "Product not found or service unavailable"
-                    };
+                    return availabilityResult;
                 }
 
-                AvailabilityInfo? availability = await response.Content.ReadFromJsonAsync<AvailabilityInfo>();
-
+                var availability = availabilityResult.Data as AvailabilityInfo;
                 if (availability == null || !availability.IsAvailable)
                 {
                     return new ServiceResult
@@ -54,13 +52,13 @@ namespace OrderService.Services
 
                 // Check if item already exists in cart
                 var existingItem = cart.Items?.FirstOrDefault(i => i.productId == productId);
-                
+
                 if (existingItem != null)
                 {
                     // Update quantity of existing item
                     existingItem.quantity += quantity;
                     bool updateSuccessful = await _cartRepository.UpdateCartItemAsync(existingItem);
-                    
+
                     if (!updateSuccessful)
                     {
                         return new ServiceResult
@@ -81,10 +79,10 @@ namespace OrderService.Services
                         priceAtPurchase = availability.currentPrice,
                         Cart = cart
                     };
-                    
+
                     // Add the cart item directly rather than updating the cart
                     bool addSuccessful = await _cartRepository.AddCartItemAsync(newItem);
-                    
+
                     if (!addSuccessful)
                     {
                         return new ServiceResult
@@ -111,14 +109,86 @@ namespace OrderService.Services
             }
         }
 
-        public Task<ServiceResult> CheckoutCartAsync(Guid cartId)
+        public async Task<ServiceResult> CheckoutCartAsync(Guid cartId)
         {
-            throw new NotImplementedException();
+            // Get cart with items
+            var cart = await _cartRepository.GetCartByIdAsync(cartId);
+
+            if (cart == null || cart.Items == null || !cart.Items.Any())
+            {
+                return new ServiceResult{
+                    Success = false,
+                    Message="Cart not found or empty"
+                };
+            }
+
+            // Create order items from cart items
+            var orderItems = new List<OrderItem>();
+
+            // Try to purchase each product
+            foreach (var item in cart.Items)
+            {
+                var purchaseResult = await _productService.PurchaseProductAsync(
+                    item.productId,
+                    item.quantity);
+
+                if (!purchaseResult.Success)
+                {
+                    // Rollback previous purchases
+                 //   await RollbackPurchasesAsync(orderItems);
+                    return new ServiceResult
+                    {
+                        Success = false,
+                        Message = $"Failed to purchase product {item.productId}: {purchaseResult.Message}"
+
+                    };
+                }
+
+                var orderItem = new OrderItem
+                {
+                    Id = Guid.NewGuid(),
+                    productId = item.productId,
+                    quantity = item.quantity,
+                    priceAtPurchase = item.priceAtPurchase,
+                    PurchaseResponse = purchaseResult.Data as PurchaseResponseDto
+                };
+
+                orderItems.Add(orderItem);
+            }
+
+            // Create and save the order
+            var order = new Order
+            {
+                Id = Guid.NewGuid(),
+                createdAt = DateTime.UtcNow,
+                Items = orderItems,
+                status = "Pending"
+            };
+
+            await _orderService.CreateOrderAsync(order);
+
+            // Delete the cart after successful checkout
+            await _cartRepository.DeleteCartAsync(cartId);
+
+            return new ServiceResult
+            {
+                Success = true,
+                Message="Oder is confiremd",
+                Data = order
+
+            };
+        }
+
+        private async Task RollbackPurchasesAsync(List<OrderItem> successfulItems)
+        {
+            foreach (var item in successfulItems)
+            {
+                await _productService.CancelPurchaseAsync(item.productId, item.quantity);
+            }
         }
 
         public async Task<Guid> CreateCartAsync()
         {
-
             var cart = new Cart
             {
                 Id = Guid.NewGuid(),
@@ -151,7 +221,7 @@ namespace OrderService.Services
 
         public async Task<CartDto> GetCartAsync(Guid cartId)
         {
-            Cart cart = await _cartRepository.GetCartAsync(cartId);
+            Cart cart = await _cartRepository.GetCartByIdAsync(cartId);
 
             return ToDto(cart);
         }
@@ -160,7 +230,7 @@ namespace OrderService.Services
         {
             try
             {
-                var cart = await _cartRepository.GetCartAsync(cartId);
+                var cart = await _cartRepository.GetCartByIdAsync(cartId);
                 if (cart == null)
                 {
                     return new ServiceResult
@@ -182,7 +252,7 @@ namespace OrderService.Services
 
                 cart.Items?.Remove(item);
                 bool updateSuccessful = await _cartRepository.UpdateCartAsync(cart);
-                
+
                 if (!updateSuccessful)
                 {
                     return new ServiceResult
@@ -212,7 +282,7 @@ namespace OrderService.Services
         {
             try
             {
-                var cart = await _cartRepository.GetCartAsync(cartId);
+                var cart = await _cartRepository.GetCartByIdAsync(cartId);
                 if (cart == null)
                 {
                     return new ServiceResult
@@ -221,7 +291,7 @@ namespace OrderService.Services
                         Message = "Cart not found."
                     };
                 }
-                
+
                 var item = cart.Items?.Find(item => item.productId == productId);
                 if (item == null)
                 {
@@ -234,7 +304,7 @@ namespace OrderService.Services
                 bool updateSuccessful = false;
                 if (quantity == 0)
                 {
-                  updateSuccessful= await _cartRepository.RemoveCartItemAsync(itemId: item.Id);
+                    updateSuccessful = await _cartRepository.RemoveCartItemAsync(itemId: item.Id);
                 }
                 else
                 {
@@ -242,7 +312,7 @@ namespace OrderService.Services
                     updateSuccessful = await _cartRepository.UpdateCartItemAsync(item);
                 }
 
-                
+
                 if (!updateSuccessful)
                 {
                     return new ServiceResult
@@ -282,7 +352,7 @@ namespace OrderService.Services
             {
                 Id = cart.Id,
                 CreatedAt = cart.CreatedAt,
-                Items=items
+                Items = items
 
             };
         }

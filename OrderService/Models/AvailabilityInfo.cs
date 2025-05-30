@@ -1,4 +1,4 @@
-﻿namespace OrderService.Services
+﻿namespace OrderService.Models
 {
     public class AvailabilityInfo
     {

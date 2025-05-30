@@ -1,4 +1,5 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using OrderService.Interfaces;
 using OrderService.Models;
 
 namespace OrderService.Persistance.Repository
@@ -19,7 +20,7 @@ namespace OrderService.Persistance.Repository
             return cart;
         }
 
-        public async Task<Cart> GetCartAsync(Guid cartId)
+        public async Task<Cart> GetCartByIdAsync(Guid cartId)
         {
             try
             {

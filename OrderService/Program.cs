@@ -2,6 +2,7 @@ using OrderService.Services;
 using Microsoft.EntityFrameworkCore;
 using OrderService.Persistance;
 using OrderService.Persistance.Repository;
+using OrderService.Interfaces;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -21,6 +22,12 @@ builder.Services.AddHttpClient<ICartService, CartService>(client =>
 {
     client.BaseAddress = new Uri("https://your-product-service-url/api/");
 });
+
+builder.Services.AddScoped<ICartService, CartService>();
+builder.Services.AddScoped<IOrderService, OrderService.Services.OrderService>();
+builder.Services.AddScoped<IProductService, ProductService>();
+builder.Services.AddScoped<IOrderRepository, OrderRepository>();
+
 
 var app = builder.Build();
 
