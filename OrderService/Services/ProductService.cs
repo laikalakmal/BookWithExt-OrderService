@@ -8,7 +8,7 @@ namespace OrderService.Services
     {
 
         private readonly HttpClient _httpClient;
-        private const string productServiceBaseUrl = "http://localhost:8080/api/Product"; 
+        private const string productServiceBaseUrl = "http://productservice.api:80/api/Product"; 
 
         public ProductService(HttpClient httpClient)
         {
@@ -72,7 +72,7 @@ namespace OrderService.Services
             {
                 var purchaseRequest = new 
                 {
-                    quantity = quantity,
+                    quantity,
                     priceAtPurchase = 0 
                 };
                 
@@ -84,7 +84,8 @@ namespace OrderService.Services
                 }
                 else
                 {
-                    return ServiceResult.Fail($"Failed to purchase product: {response.ReasonPhrase}");
+                    return ServiceResult.Fail($"Failed to purchase product: {response.ReasonPhrase}"+response.Content.ReadFromJsonAsync<PurchaseResponseDto>());
+
                 }
             }
             catch (Exception ex)

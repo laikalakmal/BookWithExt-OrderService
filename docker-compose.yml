@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   orderservice-api:
     build:
@@ -7,15 +5,15 @@ services:
       dockerfile: Dockerfile
     container_name: orderservice-api
     ports:
-      - "8080:80"
-      - "8081:443"
+      - "8090:80"
+      - "8091:443"
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
       - ConnectionStrings__DefaultConnection=Server=orderservice-db;Database=OrderServiceDb;User Id=sa;Password=OrderService123!;TrustServerCertificate=True;
+      - ASPNETCORE_URLS=http://+:80
     depends_on:
       - orderservice-db
-    networks:
-      - orderservice-network
+
 
   orderservice-db:
     image: mcr.microsoft.com/mssql/server:2022-latest
@@ -28,12 +26,12 @@ services:
       - "1434:1433"
     volumes:
       - orderservice-data:/var/opt/mssql
-    networks:
-      - orderservice-network
+
 
 networks:
-  orderservice-network:
-    driver: bridge
+  default:
+    name: bookwithext-network
+    external: true
 
 volumes:
   orderservice-data:
